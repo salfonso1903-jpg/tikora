@@ -1,43 +1,50 @@
-name: TIKORA APK Build
+name: Build TIKORA APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Download source
+      - uses: actions/checkout@v4
+
+      - name: Kaynak paketi aç
         run: |
-          curl -L "https://github.com/salfonso1903-jpg/tikora/raw/main/TIKORA-tum-ozellikler-kaynak.zip" -o source.zip
-          unzip -q source.zip -d project
+          unzip -o TIKORA-TEK-PAKET.zip -d .
+          test -f package.json
+          test -f www/index.html
+          test -f www/app.js
+          node --check www/app.js
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
-      - name: Install dependencies
-        working-directory: project/TIKORA
+      - name: Bağımlılıkları yükle
         run: npm install
 
-      - name: Create Android project
-        working-directory: project/TIKORA
+      - name: Android oluştur
         run: npx cap add android
 
-      - name: Sync Android
-        working-directory: project/TIKORA
+      - name: Android eşitle
         run: npx cap sync android
 
-      - name: Build APK
-        working-directory: project/TIKORA/android
-        run: chmod +x gradlew && ./gradlew assembleDebug
+      - name: APK oluştur
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
-      - uses: actions/upload-artifact@v4
+      - name: APK dosyasını kaydet
+        uses: actions/upload-artifact@v4
         with:
           name: TIKORA-APK
-          path: project/TIKORA/android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
