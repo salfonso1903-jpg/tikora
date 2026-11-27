@@ -17,6 +17,19 @@ jobs:
       - name: Kaynak kodları indir
         uses: actions/checkout@v4
 
+      - name: Eski kaynak paketini aç
+        run: |
+          unzip -o TIKORA-TEK-PAKET.zip -d .
+          mkdir -p www
+          cp index.html www/index.html
+          cp app.js www/app.js
+          cp config.js www/config.js
+          cp style.css www/style.css
+          test -f package.json
+          test -f capacitor.config.json
+          test -f www/index.html
+          test -f www/app.js
+
       - name: Node.js kur
         uses: actions/setup-node@v4
         with:
@@ -28,15 +41,8 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Uygulama dosyalarını hazırla
-        run: |
-          mkdir -p www
-          cp index.html www/index.html
-          cp app.js www/app.js
-          cp config.js www/config.js
-          cp style.css www/style.css
-          test -f package.json
-          test -f capacitor.config.json
+      - name: JavaScript kontrolü
+        run: node --check www/app.js
 
       - name: Bağımlılıkları yükle
         run: npm install
