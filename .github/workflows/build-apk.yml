@@ -1,3 +1,4 @@
+
 name: Build TIKORA APK
 
 on:
@@ -5,36 +6,45 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Kaynak kodları indir
+        uses: actions/checkout@v4
 
-      - name: Kaynak paketi aç
-        run: |
-          unzip -o TIKORA-TEK-PAKET.zip -d .
-          test -f package.json
-          test -f www/index.html
-          test -f www/app.js
-          node --check www/app.js
-
-      - uses: actions/setup-node@v4
+      - name: Node.js kur
+        uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - uses: actions/setup-java@v4
+      - name: Java kur
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
+      - name: Uygulama dosyalarını hazırla
+        run: |
+          mkdir -p www
+          cp index.html www/index.html
+          cp app.js www/app.js
+          cp config.js www/config.js
+          cp style.css www/style.css
+          test -f package.json
+          test -f capacitor.config.json
+
       - name: Bağımlılıkları yükle
         run: npm install
 
-      - name: Android oluştur
+      - name: Android projesini oluştur
         run: npx cap add android
 
-      - name: Android eşitle
+      - name: Android dosyalarını eşitle
         run: npx cap sync android
 
       - name: APK oluştur
@@ -48,3 +58,4 @@ jobs:
         with:
           name: TIKORA-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          
