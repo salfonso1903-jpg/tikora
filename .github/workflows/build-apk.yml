@@ -12,54 +12,38 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Kaynak kodları indir
         uses: actions/checkout@v4
 
-      - name: Eski kaynak paketini aç
-        run: |
-          unzip -o TIKORA-TEK-PAKET.zip -d .
-          mkdir -p www
-          cp index.html www/index.html
-          cp app.js www/app.js
-          cp config.js www/config.js
-          cp style.css www/style.css
-          test -f package.json
-          test -f capacitor.config.json
-          test -f www/index.html
-          test -f www/app.js
-
-      - name: Node.js kur
+      - name: Node ve Java kur
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-
-      - name: Java kur
-        uses: actions/setup-java@v4
+          node-version: 20
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
-      - name: JavaScript kontrolü
-        run: node --check www/app.js
+      - name: ZIP paketini aç
+        run: |
+          unzip -o www/TIKORA-KONTROL-DUZELTME.zip -d /tmp/tikora
+          cp -r /tmp/tikora/tikora_build/www/. www/
+          cp /tmp/tikora/tikora_build/package.json .
+          cp /tmp/tikora/tikora_build/capacitor.config.json .
 
-      - name: Bağımlılıkları yükle
+      - name: Bağımlılıkları kur
         run: npm install
 
-      - name: Android projesini oluştur
-        run: npx cap add android
-
-      - name: Android dosyalarını eşitle
-        run: npx cap sync android
+      - name: Android projesini hazırla
+        run: |
+          npx cap add android
+          npx cap sync android
 
       - name: APK oluştur
-        run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug
 
-      - name: APK dosyasını kaydet
+      - name: APK dosyasını yayınla
         uses: actions/upload-artifact@v4
         with:
           name: TIKORA-APK
