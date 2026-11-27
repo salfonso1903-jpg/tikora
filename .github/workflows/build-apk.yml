@@ -1,3 +1,4 @@
+
 name: Build TIKORA APK
 
 on:
@@ -20,17 +21,11 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Find application folder
+      - name: Build TIKORA
         run: |
-          FILE=$(find . -name package.json -not -path '*/node_modules/*' | head -n 1)
-          test -n "$FILE"
-          APP_DIR=$(dirname "$FILE")
-          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
-
-      - name: Install and build APK
-        run: |
-          cd "$APP_DIR"
-          cat > capacitor.config.json <<'EOF'
+          APP_DIR="."
+          rm -rf "$APP_DIR/capacitor.config.json"
+          cat > "$APP_DIR/capacitor.config.json" <<'EOF'
           {
             "appId": "com.tikora.app",
             "appName": "TIKORA",
@@ -40,6 +35,7 @@ jobs:
             }
           }
           EOF
+          cd "$APP_DIR"
           npm install
           npx cap add android
           npx cap sync android
@@ -51,4 +47,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: TIKORA-APK
-          path: ${{ env.APP_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          
