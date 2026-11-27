@@ -1,0 +1,201 @@
+
+Action: view_file({"path":"/app/design_guidelines.json"})
+Observation: [Showing lines 1-197 of 197 total] /app/design_guidelines.json:
+1|{
+2|  "app_name": "TIKORA",
+3|  "personality": "7 Dark-First Utility DARK (customised with vibrant electric purple and cyan accent details for Instagram/TikTok hybrid social media feel)",
+4|  "personality_one_liner": "A professional, fast, modern hybrid of Instagram and TikTok in Turkish, featuring sleek dark mode, vertical reels, rich stories, and real-time messaging.",
+5|  "color": {
+6|    "surface": "#0A0A0C",
+7|    "onSurface": "#F4F4F6",
+8|    "surfaceSecondary": "#16161A",
+9|    "onSurfaceSecondary": "#FAFAFC",
+10|    "surfaceTertiary": "#22222B",
+11|    "onSurfaceTertiary": "#FFFFFF",
+12|    "surfaceInverse": "#FFFFFF",
+13|    "onSurfaceInverse": "#0A0A0C",
+14|    "brand": "#8B5CF6",
+15|    "brandPrimary": "#8B5CF6",
+16|    "onBrandPrimary": "#FFFFFF",
+17|    "brandSecondary": "#3B82F6",
+18|    "onBrandSecondary": "#FFFFFF",
+19|    "brandTertiary": "#2D2640",
+20|    "onBrandTertiary": "#C4B5FD",
+21|    "success": "#10B981",
+22|    "onSuccess": "#FFFFFF",
+23|    "warning": "#F59E0B",
+24|    "onWarning": "#0A0A0C",
+25|    "error": "#EF4444",
+26|    "onError": "#FFFFFF",
+27|    "info": "#3B82F6",
+28|    "onInfo": "#FFFFFF",
+29|    "border": "#272730",
+30|    "borderStrong": "#8B5CF6",
+31|    "divider": "#1E1E26",
+32|    "muted": "#9CA3AF",
+33|    "onBrand": "#FFFFFF"
+34|  },
+35|  "typography": {
+36|    "displayFontFamily": "System",
+37|    "textFontFamily": "System",
+38|    "scale": {
+39|      "sm": 12,
+40|      "base": 14,
+41|      "lg": 16,
+42|      "xl": 20,
+43|      "2xl": 24
+44|    }
+45|  },
+46|  "spacing": {
+47|    "rule": "Handle spacing cleanly with comfortable 8pt rhythm, generous padding, and fixed bottom CTA positioning.",
+48|    "xs": 4,
+49|    "sm": 8,
+50|    "md": 12,
+51|    "lg": 16,
+52|    "xl": 24,
+53|    "2xl": 32,
+54|    "3xl": 48
+55|  },
+56|  "radius_tokens": {
+57|    "sm": 6,
+58|    "md": 12,
+59|    "lg": 20,
+60|    "pill": 999
+61|  },
+62|  "shadow_tier": "1",
+63|  "navigation": "bottom_tabs",
+64|  "icon_set": "Ionicons",
+65|  "glassmorphism": {
+66|    "enabled": "true",
+67|    "do's": [
+68|      "Use frosted glass on sticky top headers and bottom tab bars over scrolling content",
+69|      "Apply translucent tinted base for glass readability"
+70|    ],
+71|    "dont's": [
+72|      "Never blur body text regions or form inputs",
+73|      "Never stack multiple blur layers unnecessarily"
+74|    ]
+75|  },
+76|  "platform_libraries": {
+77|    "glass": {
+78|      "ios": "expo-glass-effect",
+79|      "android": "expo-blur",
+80|      "low_end_android_fallback": "solid surfaceSecondary"
+81|    },
+82|    "image": "expo-image",
+83|    "blur": "expo-blur",
+84|    "bottom_sheet": "@gorhom/bottom-sheet",
+85|    "animation": "react-native-reanimated",
+86|    "gesture": "react-native-gesture-handler"
+87|  },
+88|  "screens": [
+89|    {
+90|      "name": "Auth / Giriş",
+91|      "purpose": "Email/password authentication with registration, password reset, and phone SMS login flows.",
+92|      "states": {
+93|        "loading": "Centered spinner with branded dark background",
+94|        "empty": "N/A",
+95|        "error": "Banner with readable Turkish error message and retry"
+96|      },
+97|      "layout": "Clean card container with tab toggle between Email and Phone SMS, large inputs, and prominent brand CTA button."
+98|    },
+99|    {
+100|      "name": "Ana Sayfa / Home Feed",
+101|      "purpose": "Instagram-style photo and video post feed with top story bubbles, likes, comments, and sharing.",
+102|      "states": {
+103|        "loading": "Skeleton post placeholders with pulse animation",
+104|        "empty": "Illustration with 'Henüz gönderi yok' and 'Keşfet' CTA",
+105|        "error": "Error message card with Yeniden Dene button"
+106|      },
+107|      "layout": "Sticky glass header with logo and direct messaging icon, horizontal scroll story tray, vertical feed of full-width media posts with interactive engagement bars."
+108|    },
+109|    {
+110|      "name": "Keşfet / Discover",
+111|      "purpose": "Explore popular posts, reels, hashtags, user suggestions, and global search.",
+112|      "states": {
+113|        "loading": "Grid skeleton loaders",
+114|        "empty": "No results state with popular suggestions",
+115|        "error": "Retry error card"
+116|      },
+117|      "layout": "Top search bar with hashtag chips, followed by a masonry/grid layout of trending videos and photos."
+118|    },
+119|    {
+120|      "name": "Reels",
+121|      "purpose": "TikTok-style full-screen vertical video feed with swipe up/down, like, comment, and view counts.",
+122|      "states": {
+123|        "loading": "Full screen dark spinner",
+124|        "empty": "No reels available state",
+125|        "error": "Reload video button"
+126|      },
+127|      "layout": "Immersive edge-to-edge vertical video container with floating overlay for creator profile, sound track, caption, and right-side vertical action buttons."
+128|    },
+129|    {
+130|      "name": "Mesajlar / Messaging",
+131|      "purpose": "Real-time chat list and active conversation with text, photo, voice message support, and typing indicators.",
+132|      "states": {
+133|        "loading": "Conversation list skeletons",
+134|        "empty": "Illustration + 'Henüz mesajınız yok' + 'Sohbet Başlat' CTA",
+135|        "error": "Network error banner"
+136|      },
+137|      "layout": "Top header with search and active status, list of conversation rows with unread counters, and active chat window with sticky bottom input bar."
+138|    },
+139|    {
+140|      "name": "Bildirimler / Notifications",
+141|      "purpose": "In-app notification center for likes, comments, new followers, and system alerts.",
+142|      "states": {
+143|        "loading": "List skeleton items",
+144|        "empty": "Illustration + 'Bildiriminiz bulunmuyor'",
+145|        "error": "Error message"
+146|      },
+147|      "layout": "Categorized notification items with avatar, action text, timestamp, and interactive follow/view button."
+148|    },
+149|    {
+150|      "name": "Profil / Profile",
+151|      "purpose": "User profile with grid view of posts, reels, story highlights, bio, link, and follower metrics.",
+152|      "states": {
+153|        "loading": "Profile header skeleton + grid placeholders",
+154|        "empty": "Empty grid state with 'İlk gönderini paylaş' CTA",
+155|        "error": "Error message"
+156|      },
+157|      "layout": "Cover banner, avatar, follower/following stats, bio, action buttons (Düzenle / Takip Et), segment tabs (Posts, Reels, Saved), and 3-column media grid."
+158|    },
+159|    {
+160|      "name": "Yönetici Paneli / Admin Panel",
+161|      "purpose": "Administrative controls for platform moderation, reported content, and user management.",
+162|      "states": {
+163|        "loading": "Metrics skeleton",
+164|        "empty": "No items to moderate",
+165|        "error": "Error retry card"
+166|      },
+167|      "layout": "Dashboard overview cards with total users, reports list with approve/remove actions, and server health check."
+168|    },
+169|    {
+170|      "name": "Ayarlar / Settings",
+171|      "purpose": "App settings including theme switching, privacy controls, account management, and account deletion.",
+172|      "states": {
+173|        "loading": "Settings list skeleton",
+174|        "empty": "N/A",
+175|        "error": "Error message"
+176|      },
+177|      "layout": "Grouped list sections with toggle switches, chevron navigation links, and destructive action buttons at the bottom."
+178|    }
+179|  ],
+180|  "images": {
+181|    "logo": {
+182|      "url": "https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?crop=entropy&cs=srgb&fm=jpg&q=85",
+183|      "alt": "TIKORA App Logo"
+184|    },
+185|    "cover_banner": {
+186|      "url": "https://images.unsplash.com/photo-1618123069754-cd64c230a169?crop=entropy&cs=srgb&fm=jpg&q=85",
+187|      "alt": "Profile Cover Banner"
+188|    }
+189|  },
+190|  "instructions_to_main_agent": [
+191|    "Build TIKORA as a fully functional, Turkish-language Instagram/TikTok hybrid social media app in React Native / Expo router.",
+192|    "Implement gorgeous dark-first utility aesthetic with electric purple and blue accents, glassmorphic headers, and smooth bottom tab navigation (Ana Sayfa, Keşfet, Reels, Profil).",
+193|    "Ensure complete backend connectivity for posts, stories, reels, messaging, notifications, auth (email + phone SMS), profile editing, settings, and admin panel.",
+194|    "Follow all spacing, touch target (>=44pt), safe area, and loading/empty/error state rules strictly."
+195|  ]
+196|}
+197|
+[End of file]
