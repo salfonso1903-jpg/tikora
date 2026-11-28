@@ -19,23 +19,30 @@
 
 <section id="auth" class="auth card" hidden>
 <h1>TIKORA'ya hoş geldin</h1>
-<p>Fotoğrafını, videonu ve anlarını paylaş.</p>
-
-<input id="email" type="email" placeholder="E-posta adresin" autocomplete="email">
-<input id="password" type="password" placeholder="Şifre (en az 6 karakter)" autocomplete="current-password">
-<input id="username" placeholder="Kullanıcı adı (kayıt için)">
-
-<div class="authEmailOtp">
-<input id="emailOtp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="E-postana gelen 6 haneli kod">
-<button id="verifyEmailOtp" type="button">E-posta kodunu doğrula</button>
+<p>Topluluğa katıl, anlarını paylaş.</p>
+<div class="authModeSwitch">
+<button id="showLogin" type="button" class="authModeActive">Giriş yap</button>
+<button id="showRegister" type="button" class="secondary">Hesap oluştur</button>
 </div>
-
-<div class="actions">
-<button id="signIn">Giriş yap</button><button id="resetPassword" type="button">Şifremi unuttum</button>
-<button id="signUp">Ücretsiz kayıt ol</button>
+<label class="authLabel" for="email">E-posta adresi</label>
+<input id="email" type="email" placeholder="ornek@mail.com" autocomplete="email">
+<label class="authLabel" for="password">Şifre</label>
+<input id="password" type="password" placeholder="En az 6 karakter" autocomplete="current-password">
+<div id="usernameField" hidden>
+<label class="authLabel" for="username">Kullanıcı adı</label>
+<input id="username" placeholder="Kullanıcı adını seç" autocomplete="username">
 </div>
-
-<small id="authMsg">Kayıt sonrası e-posta onayı gerekebilir.</small>
+<div id="emailOtpPanel" class="authEmailOtp" hidden>
+<label class="authLabel" for="emailOtp">E-posta doğrulama kodu</label>
+<input id="emailOtp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="6 haneli kod">
+<button id="verifyEmailOtp" type="button">Kodu doğrula ve kayıt ol</button>
+</div>
+<div class="actions authActions">
+<button id="signIn" type="button">Giriş yap</button>
+<button id="resetPassword" type="button" class="secondary">Şifremi unuttum</button>
+<button id="signUp" type="button" hidden>Doğrulama kodu gönder</button>
+</div>
+<small id="authMsg">Giriş için e-posta ve şifreni yaz. Yeni misin? Hesap oluştur sekmesine geç.</small>
 </section>
 
 <main id="app" hidden>
