@@ -45,3 +45,4 @@
 .authActions{display:flex;flex-direction:column}
 .authActions button{width:100%}
 #authMsg{display:block;margin-top:12px;min-height:22px}
+\n/* TIKORA video suite additions */\n.vsPanel{background:#142a20;border:1px solid #294438;border-radius:16px;padding:14px;margin:12px 0}.vsPanel h3{margin:4px 0 12px}.vsPanel button{margin:4px}.vsPanel video{display:block;width:100%;max-height:55vh;background:#000;border-radius:12px;margin:8px 0}.vsPanel label{display:block;margin:8px 0}.vsPanel input{margin:6px 0}.vsTag{margin:5px!important}.vsVideo{background:#10271f;border-radius:14px;padding:8px;margin:10px 0}.vsVideo video{width:100%;max-height:65vh;background:#000;border-radius:10px}.vsVideo p{overflow-wrap:anywhere}#videoSuite{padding-bottom:30px}#vsStatus{display:block;padding:12px;color:#9ce8c3;overflow-wrap:anywhere}\n
