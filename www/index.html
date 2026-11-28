@@ -25,11 +25,9 @@
 <input id="password" type="password" placeholder="Şifre (en az 6 karakter)" autocomplete="current-password">
 <input id="username" placeholder="Kullanıcı adı (kayıt için)">
 
-<div class="authPhone">
-<input id="phone" type="tel" placeholder="Telefon (+905...)">
-<button id="sendOtp" type="button">SMS kodu gönder</button>
-<input id="otp" inputmode="numeric" autocomplete="one-time-code" placeholder="SMS doğrulama kodu">
-<button id="verifyOtp" type="button">Telefonla giriş / kayıt</button>
+<div class="authEmailOtp">
+<input id="emailOtp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="E-postana gelen 6 haneli kod">
+<button id="verifyEmailOtp" type="button">E-posta kodunu doğrula</button>
 </div>
 
 <div class="actions">
