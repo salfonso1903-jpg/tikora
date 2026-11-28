@@ -33,3 +33,5 @@
 @keyframes tikoraHeartPop{0%{opacity:0;transform:translate(-50%,-50%) scale(.25)}25%{opacity:1;transform:translate(-50%,-50%) scale(1.18)}48%{opacity:1;transform:translate(-50%,-50%) scale(.95)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.12)}}
 
 .profileCounts{display:flex;justify-content:space-around;gap:12px;padding:12px 4px;margin:8px 0;border-top:1px solid #ffffff22;border-bottom:1px solid #ffffff22;text-align:center}.profileCounts span{display:flex;flex-direction:column;gap:4px;color:#b9c9c0;font-size:13px}.profileCounts b{font-size:17px;color:#fff}.reel{scroll-snap-align:start;min-height:75vh;display:flex;flex-direction:column;justify-content:center}#videoFeed{scroll-snap-type:y proximity}#resetPassword{background:transparent;color:#8fe9bd;text-decoration:underline}
+
+.dmMedia{display:block;max-width:min(240px,65vw);max-height:320px;border-radius:12px;margin-top:4px}.dmComposer #attachChat,.dmComposer #recordVoice{min-width:38px;padding:8px}.dmComposer{gap:6px}
