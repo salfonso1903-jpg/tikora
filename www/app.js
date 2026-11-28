@@ -1,320 +1,42 @@
-/* TIKORA - app.js replacement
-
-- Existing www/index.html, www/style.css and www/config.js ile uyumludur.
-- Supabase tabloları: profiles, posts, likes, comments, saved_posts, follows,
-- messages, stories, user_settings. İsteğe bağlı: notifications, friend_requests,
-- blocked_users, story_views.
-  */
-  (() => {
-  "use strict";
-
-const cfg = window.TIKORA_CONFIG || {};
-const byId = (id) => document.getElementById(id);
-const required = ["auth", "app", "nav", "toast"];
-if (!window.supabase || !cfg.supabaseUrl || !cfg.supabaseAnonKey) {
-document.addEventListener("DOMContentLoaded", () => {
-const msg = byId("authMsg");
-if (msg) msg.textContent = "Supabase ayarı bulunamadı. www/config.js dosyasını kontrol et.";
-});
-console.error("TIKORA: Supabase yapılandırması bulunamadı.");
-return;
+const cfg=window.TIKORA_CONFIG||{};
+if(!window.supabase || !cfg.supabaseUrl || !cfg.supabaseAnonKey) {
+  document.addEventListener("DOMContentLoaded",()=>{const a=document.getElementById("authMsg");if(a)a.textContent="Supabase ayarı bulunamadı. www/config.js dosyasını kontrol edin.";});
+  throw new Error("TIKORA Supabase config missing");
 }
-const client = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
-const $ = byId;
-let user = null;
-let profile = null;
-let activePeer = null;
-let posts = [];
-let chatChannel = null;
-let searchTimer = null;
-let toastTimer = null;
-let authBusy = false;
-const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({
-"&": "&", "<": "<", ">": ">", '"': """, "'": "'"
-})[c]);
-const setText = (id, value) => { const el = $(id); if (el) el.textContent = value; };
-const setHtml = (id, value) => { const el = $(id); if (el) el.innerHTML = value; };
-const on = (id, event, handler) => { const el = $(id); if (el) el.addEventListener(event, handler); };
-const showError = (error, prefix = "") => {
-console.error("TIKORA:", error);
-const message = error?.message || String(error || "Bilinmeyen hata");
-toast((prefix ? prefix + ": " : "") + message);
-};
-function toast(message) {
-const el = $("toast");
-if (!el) return;
-el.textContent = message;
-el.style.display = "block";
-clearTimeout(toastTimer);
-toastTimer = setTimeout(() => { el.style.display = "none"; }, 3200);
-}
-function authView(isLoggedIn) {
-if ($("auth")) $("auth").hidden = !!isLoggedIn;
-if ($("app")) $("app").hidden = !isLoggedIn;
-if ($("nav")) $("nav").hidden = !isLoggedIn;
-}
-function showScreen(name, options = {}) {
-document.querySelectorAll(".screen").forEach((el) => { el.hidden = el.id !== name; });
-document.querySelectorAll("nav button[data-screen]").forEach((button) => {
-button.style.color = button.dataset.screen === name ? "#55dba4" : "#fff";
-});
-if (!user) return;
-if (name === "home") loadFeed();
-if (name === "reels") loadVideos();
-if (name === "explore") { setHtml("searchResults", ""); if ($("search")) $("search").value = ""; }
-if (name === "messages" && !options.skipInbox) loadInbox();
-if (name === "notifications") loadNotifications();
-if (name === "profile") loadProfile();
-if (name === "settings") loadSettings();
-}
-async function ensureProfile(authUser) {
-const meta = authUser.user_metadata || {};
-const fallbackName = (authUser.email || authUser.phone || "tikora").split("@")[0];
-const username = String(meta.username || fallbackName || "tikora").replace(/[^a-zA-Z0-9_.]/g, "").slice(0, 30) || "tikora";
-const { data, error } = await client.from("profiles").upsert({
-id: authUser.id,
-username,
-display_name: meta.display_name || meta.username || username
-}, { onConflict: "id" }).select().single();
-if (error) throw error;
-profile = data;
-}
-async function afterAuth(authUser) {
-if (!authUser || authBusy) return;
-authBusy = true;
-try {
-user = authUser;
-await ensureProfile(authUser);
-authView(true);
-showScreen("home");
-loadStories();
-refreshNotificationCount();
-} catch (error) {
-showError(error, "Profil açılamadı");
-authView(false);
-} finally { authBusy = false; }
-}
-
-async function signInWithIdentifier() {
-const identifier = $("email")?.value.trim() || "";
-const password = $("password")?.value || "";
-if (!identifier || !password) { setText("authMsg", "E-posta ve şifreni gir."); return; }
-if (!identifier.includes("@")) { setText("authMsg", "Şimdilik e-posta adresinle giriş yap. Kullanıcı adıyla giriş için sunucu tarafı doğrulama gerekir."); return; }
-const { data, error } = await client.auth.signInWithPassword({ email: identifier, password });
-if (error) { setText("authMsg", error.message); return; }
-if (data.user) await afterAuth(data.user);
-}
-async function signUp() {
-const email = $("email")?.value.trim() || "";
-const password = $("password")?.value || "";
-const username = $("username")?.value.trim() || "";
-if (!email || !email.includes("@")) { setText("authMsg", "Geçerli bir e-posta adresi yaz."); return; }
-if (password.length < 6) { setText("authMsg", "Şifre en az 6 karakter olmalı."); return; }
-if (username.length < 3) { setText("authMsg", "Kullanıcı adı en az 3 karakter olmalı."); return; }
-const { data, error } = await client.auth.signUp({ email, password, options: { data: { username, display_name: username } } });
-if (error) { setText("authMsg", error.message); return; }
-if (data.session && data.user) await afterAuth(data.user);
-else setText("authMsg", "Kayıt oluşturuldu. E-posta adresine gelen doğrulama bağlantısına tıkla, sonra giriş yap.");
-}
-async function sendOtp() {
-const phone = $("phone")?.value.trim() || "";
-if (!phone.startsWith("+")) { setText("authMsg", "Telefon numarasını ülke koduyla yaz. Örnek: +905xxxxxxxxx"); return; }
-const { error } = await client.auth.signInWithOtp({ phone });
-if (error) setText("authMsg", error.message);
-else setText("authMsg", "SMS kodu gönderildi. Gelen kodu aşağıya yaz.");
-}
-async function verifyOtp() {
-const phone = $("phone")?.value.trim() || "";
-const token = $("otp")?.value.trim() || "";
-if (!phone || !token) { setText("authMsg", "Telefon numarası ve SMS kodunu gir."); return; }
-const { data, error } = await client.auth.verifyOtp({ phone, token, type: "sms" });
-if (error) setText("authMsg", error.message);
-else if (data.user) await afterAuth(data.user);
-}
-
-function mediaMarkup(post) {
-if (!post.media_url) return "";
-const url = escapeHtml(post.media_url);
-if (post.media_type === "video") return <video class="postMedia" controls playsinline preload="metadata" src="${url}"></video>;
-return <img class="postMedia" loading="lazy" src="${url}" alt="Gönderi görseli">;
-}
-function postCard(post) {
-const name = post.profiles?.username || "kullanici";
-const avatar = post.profiles?.avatar_url
-? <img class="avatarImg" src="${escapeHtml(post.profiles.avatar_url)}" alt="">
-: <div class="avatar">${escapeHtml(name.charAt(0).toUpperCase())}</div>;
-return <article class="post"><div class="postTop">${avatar}<b class="userLink" data-user="${escapeHtml(post.user_id)}">@${escapeHtml(name)}</b></div>${mediaMarkup(post)}<div class="postText">${escapeHtml(post.caption || "")}</div><div class="postActions"><button type="button" data-like="${escapeHtml(post.id)}" aria-pressed="false">♡ Beğen</button><button type="button" data-comments="${escapeHtml(post.id)}">◯ Yorumlar</button><button type="button" data-share="${escapeHtml(post.id)}">↗ Paylaş</button><button type="button" data-save="${escapeHtml(post.id)}">☆ Kaydet</button></div></article>;
-}
-async function loadFeed() {
-if (!$("feed")) return;
-setHtml("feed", '<p class="empty">Akış yükleniyor…</p>');
-const { data, error } = await client.from("posts")
-.select("id,user_id,caption,media_url,media_type,created_at,profiles(username,avatar_url)")
-.order("created_at", { ascending: false }).limit(40);
-if (error) { setHtml("feed", <p class="empty">Akış yüklenemedi: ${escapeHtml(error.message)}</p>); return; }
-posts = data || [];
-setHtml("feed", posts.length ? posts.map(postCard).join("") : '<p class="empty">Henüz gönderi yok. İlk paylaşımı sen yap!</p>');
-bindPostActions();
-await hydrateLikeStates();
-}
-async function hydrateLikeStates() {
-if (!user) return;
-const buttons = [...document.querySelectorAll("[data-like]")];
-if (!buttons.length) return;
-const ids = [...new Set(buttons.map((button) => button.dataset.like))];
-const { data, error } = await client.from("likes").select("post_id").eq("user_id", user.id).in("post_id", ids);
-if (error) return;
-const liked = new Set((data || []).map((row) => String(row.post_id)));
-buttons.forEach((button) => {
-const active = liked.has(String(button.dataset.like));
-button.setAttribute("aria-pressed", String(active));
-button.classList.toggle("liked", active);
-button.textContent = active ? "♥ Beğenildi" : "♡ Beğen";
-});
-}
-function bindPostActions() {
-document.querySelectorAll("[data-like]").forEach((b) => { b.onclick = () => toggleLike(b.dataset.like); });
-document.querySelectorAll("[data-comments]").forEach((b) => { b.onclick = () => showComments(b.dataset.comments); });
-document.querySelectorAll("[data-share]").forEach((b) => { b.onclick = () => sharePost(b.dataset.share); });
-document.querySelectorAll("[data-save]").forEach((b) => { b.onclick = () => savePost(b.dataset.save); });
-document.querySelectorAll("[data-user]").forEach((b) => { b.onclick = () => openUser(b.dataset.user); });
-}
-async function toggleLike(id) {
-if (!user) return;
-const buttons = [...document.querySelectorAll([data-like="${CSS.escape(String(id))}"])];
-buttons.forEach((b) => { b.disabled = true; });
-try {
-const { data, error } = await client.from("likes").select("id").eq("post_id", id).eq("user_id", user.id).maybeSingle();
-if (error) throw error;
-const result = data
-? await client.from("likes").delete().eq("id", data.id).eq("user_id", user.id)
-: await client.from("likes").insert({ post_id: id, user_id: user.id });
-if (result.error) throw result.error;
-const active = !data;
-buttons.forEach((b) => { b.setAttribute("aria-pressed", String(active)); b.classList.toggle("liked", active); b.textContent = active ? "♥ Beğenildi" : "♡ Beğen"; });
-} catch (error) { showError(error, "Beğeni kaydedilemedi"); }
-finally { buttons.forEach((b) => { b.disabled = false; }); }
-}
-async function savePost(id) {
-const { error } = await client.from("saved_posts").upsert({ user_id: user.id, post_id: id }, { onConflict: "user_id,post_id" });
-if (error) showError(error, "Gönderi kaydedilemedi"); else toast("Gönderi kaydedildi.");
-}
-async function showComments(id) {
-const { data, error } = await client.from("comments").select("id,user_id,body,created_at,profiles(username,avatar_url)").eq("post_id", id).order("created_at", { ascending: true });
-if (error) { showError(error, "Yorumlar yüklenemedi"); return; }
-const dialog = document.createElement("dialog");
-dialog.className = "commentsDialog";
-dialog.innerHTML = <form method="dialog"><h2>Yorumlar</h2><div>${(data || []).map((c) => <p><b>@${escapeHtml(c.profiles?.username || "kullanici")}</b> ${escapeHtml(c.body)}</p>).join("") || "<p>Henüz yorum yok.</p>"}</div><textarea id="newComment" placeholder="Yorum yaz…"></textarea><div class="actions"><button value="cancel" class="secondary">Kapat</button><button type="button" id="sendComment">Gönder</button></div></form>;
-document.body.appendChild(dialog); dialog.showModal();
-dialog.querySelector("#sendComment").onclick = async () => {
-const body = dialog.querySelector("#newComment").value.trim();
-if (!body) return;
-const result = await client.from("comments").insert({ post_id: id, user_id: user.id, body });
-if (result.error) showError(result.error, "Yorum eklenemedi");
-else { dialog.close(); toast("Yorum eklendi."); }
-};
-dialog.addEventListener("close", () => dialog.remove(), { once: true });
-}
-async function sharePost(id) {
-const post = posts.find((p) => String(p.id) === String(id));
-const text = ${post?.caption || "TIKORA gönderisi"} ${post?.media_url || ""}.trim();
-try {
-if (navigator.share) await navigator.share({ title: "TIKORA", text });
-else if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); toast("Gönderi bilgisi kopyalandı."); }
-else toast(text);
-} catch (error) { if (error?.name !== "AbortError") showError(error, "Paylaşım yapılamadı"); }
-}
-async function publish() {
-const file = $("media")?.files?.[0] || null;
-const caption = $("caption")?.value.trim() || "";
-if (!file && !caption) { toast("Metin veya fotoğraf/video ekle."); return; }
-if (file && file.size > 100 * 1024 * 1024) { toast("Dosya en fazla 100 MB olabilir."); return; }
-let mediaUrl = null, mediaType = null;
-if (file) {
-const ext = (file.name.split(".").pop() || "bin").toLowerCase();
-const path = ${user.id}/${Date.now()}.${ext};
-const upload = await client.storage.from("media").upload(path, file, { upsert: false });
-if (upload.error) { showError(upload.error, "Medya yüklenemedi"); return; }
-mediaUrl = client.storage.from("media").getPublicUrl(path).data.publicUrl;
-mediaType = file.type.startsWith("video/") ? "video" : "image";
-}
-const { error } = await client.from("posts").insert({ user_id: user.id, caption, media_url: mediaUrl, media_type: mediaType });
-if (error) { showError(error, "Gönderi paylaşılmadı"); return; }
-$("postDialog")?.close();
-if ($("caption")) $("caption").value = "";
-if ($("media")) $("media").value = "";
-toast("Gönderin paylaşıldı.");
-loadFeed(); loadVideos();
-}
-async function loadVideos() {
-if (!$("videoFeed")) return;
-setHtml("videoFeed", '<p class="empty">Videolar yükleniyor…</p>');
-const { data, error } = await client.from("posts")
-.select("id,user_id,caption,media_url,media_type,created_at,profiles(username,avatar_url)")
-.eq("media_type", "video").order("created_at", { ascending: false }).limit(50);
-if (error) { setHtml("videoFeed", <p class="empty">Videolar yüklenemedi: ${escapeHtml(error.message)}</p>); return; }
-const rows = data || [];
-setHtml("videoFeed", rows.map((p) => <article class="reel"><video controls playsinline loop preload="metadata" src="${escapeHtml(p.media_url)}"></video><p><b>@${escapeHtml(p.profiles?.username || "kullanici")}</b><br>${escapeHtml(p.caption || "")}<br><button data-like="${escapeHtml(p.id)}" aria-pressed="false">♡ Beğen</button> <button data-comments="${escapeHtml(p.id)}">Yorumlar</button></p></article>).join("") || '<p class="empty">Henüz video yok. + tuşuyla video paylaş.</p>');
-bindPostActions(); await hydrateLikeStates();
-}
-
-async function searchUsers() {
-const query = $("search")?.value.trim() || "";
-if (query.length < 2) { setHtml("searchResults", ""); return; }
-const { data, error } = await client.from("profiles").select("id,username,display_name,bio").ilike("username", %${query}%).neq("id", user.id).limit(25);
-if (error) { setHtml("searchResults", <p class="empty">${escapeHtml(error.message)}</p>); return; }
-const people = data || [];
-setHtml("searchResults", people.map((p) => <div class="card userResult"><b>@${escapeHtml(p.username || "kullanici")}</b><span>${escapeHtml(p.display_name || "")}</span><button data-profile="${escapeHtml(p.id)}">Profil</button><button data-follow="${escapeHtml(p.id)}">Takip et</button><button data-message="${escapeHtml(p.id)}">Mesaj</button></div>).join("") || '<p class="empty">Kullanıcı bulunamadı.</p>');
-const followButtons = [...document.querySelectorAll("[data-follow]")];
-if (followButtons.length) {
-const ids = followButtons.map((b) => b.dataset.follow);
-const follows = await client.from("follows").select("following_id").eq("follower_id", user.id).in("following_id", ids);
-if (!follows.error) {
-const followed = new Set((follows.data || []).map((x) => String(x.following_id)));
-followButtons.forEach((b) => { const active = followed.has(String(b.dataset.follow)); b.textContent = active ? "Takip ediliyor" : "Takip et"; b.dataset.following = String(active); });
-}
-}
-document.querySelectorAll("[data-profile]").forEach((b) => { b.onclick = () => openUser(b.dataset.profile); });
-document.querySelectorAll("[data-follow]").forEach((b) => { b.onclick = () => toggleFollow(b.dataset.follow); });
-document.querySelectorAll("[data-message]").forEach((b) => { b.onclick = () => openChat(b.dataset.message); });
-}
-async function toggleFollow(id) {
-if (!user || !id || id === user.id) return;
-const buttons = [...document.querySelectorAll([data-follow="${CSS.escape(String(id))}"],#followThis)];
-buttons.forEach((b) => { b.disabled = true; });
-try {
-const { data, error } = await client.from("follows").select("follower_id").eq("follower_id", user.id).eq("following_id", id).maybeSingle();
-if (error) throw error;
-const result = data
-? await client.from("follows").delete().eq("follower_id", user.id).eq("following_id", id)
-: await client.from("follows").insert({ follower_id: user.id, following_id: id });
-if (result.error) throw result.error;
-const label = data ? "Takip et" : "Takip ediliyor";
-buttons.forEach((b) => { b.textContent = label; b.dataset.following = String(!data); });
-toast(data ? "Takipten çıkıldı." : "Takip edildi.");
-} catch (error) { showError(error, "Takip işlemi başarısız"); }
-finally { buttons.forEach((b) => { b.disabled = false; }); }
-}
-async function openUser(id) {
-const { data: person, error } = await client.from("profiles").select("id,username,display_name,bio,avatar_url").eq("id", id).maybeSingle();
-if (error || !person) { showError(error || { message: "Profil bulunamadı." }); return; }
-const { data: theirPosts } = await client.from("posts").select("id,user_id,caption,media_url,media_type,created_at,profiles(username,avatar_url)").eq("user_id", id).order("created_at", { ascending: false });
-setHtml("searchResults", <div class="card"><h2>@${escapeHtml(person.username || "kullanici")}</h2><p>${escapeHtml(person.display_name || "")}</p><p>${escapeHtml(person.bio || "")}</p><button id="followThis" type="button">Takip et / bırak</button><button id="messageThis" type="button">Mesaj gönder</button></div>${(theirPosts || []).map(postCard).join("")});
-on("followThis", "click", () => toggleFollow(id));
-on("messageThis", "click", () => openChat(id));
-bindPostActions(); await hydrateLikeStates();
-}
-
-async function loadProfile() {
-const { data, error } = await client.from("profiles").select("*").eq("id", user.id).maybeSingle();
-if (error) { showError(error, "Profil yüklenemedi"); return; }
-profile = data || profile;
-const username = profile?.username || user.email || "TIKORA kullanıcısı";
-const avatar = profile?.avatar_url
-? <img class="profileAvatar" src="${escapeHtml(profile.avatar_url)}" alt="Profil fotoğrafı">
-: <div class="profileAvatar avatar">${escapeHtml(username.charAt(0).toUpperCase())}</div>;
-setHtml("myProfile", <div class="card profileCard">${avatar}<h2>${escapeHtml(username)}</h2><p>${escapeHtml(profile?.display_name || "TIKORA kullanıcısı")}</p><p>${escapeHtml(profile?.bio || "")}</p><button id="editProfile" type="button">Profili düzenle</button><button id="logout" type="button">Çıkış yap</button></div><div id="ownPosts"></div>);
-on("logout", "click", signOut);
-on("editProfile", "click", editProfile);
-const { data: mine, error: postError } = await client.from("posts").select("id,user_id,caption,media_url,media_type,created_at,profiles(username,avatar_url)").eq("user_id", user.id).order("created_at", { ascending: false });
-if (postError) setHtml("ownPosts", `<p class="empty">${escapeHt
+const client=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey);
+const $=id=>document.getElementById(id);
+let user=null,profile=null,activePeer=null,posts=[];
+const loadState={feedAt:0,feedPromise:null,videoAt:0,videoPromise:null,inboxAt:0,inboxPromise:null};
+const CACHE_MS=20000;
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function toast(s){$("toast").textContent=s;$("toast").style.display="block";setTimeout(()=>$ ("toast").style.display="none",3000)}
+function authView(on){$("auth").hidden=on;$("app").hidden=!on;$("nav").hidden=!on}
+function showScreen(name,opts={}){document.querySelectorAll(".screen").forEach(x=>x.hidden=x.id!==name);document.querySelectorAll("nav button").forEach(b=>b.style.color=b.dataset.screen===name?"#55dba4":"#fff");if(name==="home")loadFeed();if(name==="reels")loadVideos();if(name==="explore"){if($("search"))$("search").value="";if($("searchResults"))$("searchResults").innerHTML=""}if(name==="messages"&&!opts.skipInbox)loadInbox();if(name==="notifications")loadNotifications();if(name==="profile")loadProfile();if(name==="settings")loadSettings()}
+function safeErr(e){toast(e?.message||"Bir hata oluştu")}
+async function signInWithIdentifier(){const identifier=$("email").value.trim(),password=$("password").value;if(!identifier||!password){$("authMsg").textContent="E-posta ve şifreni gir.";return}if(!identifier.includes("@")){$("authMsg").textContent="Kullanıcı adıyla giriş henüz güvenli sunucu doğrulaması gerektiriyor. Şimdilik kayıtlı e-posta adresinle giriş yap.";return}const {data,error}=await client.auth.signInWithPassword({email:identifier,password});if(error){$("authMsg").textContent=error.message;return}user=data.user;await afterAuth()}
+async function afterAuth(){let {data,error}=await client.from("profiles").upsert({id:user.id,username:user.user_metadata?.username||(user.email||user.phone||"tikora").split("@")[0],display_name:user.user_metadata?.username||(user.email||user.phone||"tikora").split("@")[0]},{onConflict:"id"}).select().single();if(error){safeErr(error);return}profile=data;authView(true);showScreen("home");loadStories();refreshNotificationCount()}
+function media(p){if(!p.media_url)return "";return p.media_type==="video"?`<video class="postMedia" controls playsinline preload="metadata" src="${esc(p.media_url)}"></video>`:`<img class="postMedia" loading="lazy" src="${esc(p.media_url)}">`}
+function postCard(p){const avatar=p.profiles?.avatar_url?`<img class="avatarImg" src="${esc(p.profiles.avatar_url)}">`:`<div class="avatar">${esc((p.profiles?.username||"?")[0].toUpperCase())}</div>`;return `<article class="post"><div class="postTop">${avatar}<b class="userLink" data-user="${p.user_id}">@${esc(p.profiles?.username||"kullanici")}</b></div>${media(p)}<div class="postText">${esc(p.caption||"")}</div><div class="postActions"><button data-like="${p.id}" aria-pressed="false">♡ Beğen</button><button data-comments="${p.id}">◯ Yorumlar</button><button data-share="${p.id}">↗ Paylaş</button><button data-save="${p.id}">☆ Kaydet</button></div></article>`}
+async function loadFeed(force=false){if(loadState.feedPromise)return loadState.feedPromise;if(!force&&Date.now()-loadState.feedAt<CACHE_MS&&$("feed").dataset.loaded==="1")return;loadState.feedPromise=(async()=>{let {data,error}=await client.from("posts").select("id,user_id,caption,media_url,media_type,created_at,profiles(username,avatar_url)").order("created_at",{ascending:false}).limit(30);if(error){$("feed").innerHTML=`<p class="empty">Akış yüklenemedi: ${esc(error.message)}</p>`;return}posts=data||[];$("feed").innerHTML=posts.length?posts.map(postCard).join():'<p class="empty">Henüz gönderi yok. İlk paylaşımı sen yap!</p>';$ ("feed").dataset.loaded="1";loadState.feedAt=Date.now();bindPostActions();await hydrateLikeStates()})().finally(()=>loadState.feedPromise=null);return loadState.feedPromise}
+async function hydrateLikeStates(){const buttons=[...document.querySelectorAll("[data-like]")];if(!user||!buttons.length)return;const ids=[...new Set(buttons.map(b=>b.dataset.like))];const {data,error}=await client.from("likes").select("post_id").eq("user_id",user.id).in("post_id",ids);if(error)return;const liked=new Set((data||[]).map(x=>String(x.post_id)));buttons.forEach(b=>{const on=liked.has(String(b.dataset.like));b.setAttribute("aria-pressed",String(on));b.classList.toggle("liked",on);b.textContent=on?"♥ Beğenildi":"♡ Beğen"})}
+function bindPostActions(){document.querySelectorAll("[data-like]").forEach(b=>b.onclick=()=>toggleLike(b.dataset.like));document.querySelectorAll("[data-comments]").forEach(b=>b.onclick=()=>showComments(b.dataset.comments));document.querySelectorAll("[data-share]").forEach(b=>b.onclick=()=>sharePost(b.dataset.share));
+ document.querySelectorAll("[data-save]").forEach(b=>b.onclick=()=>savePost(b.dataset.save));document.querySelectorAll("[data-user]").forEach(b=>b.onclick=()=>openUser(b.dataset.user))}
+async function savePost(id){const {error}=await client.from("saved_posts").upsert({user_id:user.id,post_id:id},{onConflict:"user_id,post_id"});if(error)safeErr(error);else toast("Gönderi kaydedildi")}
+async function toggleLike(id){if(!user)return;const buttons=[...document.querySelectorAll(`[data-like="${CSS.escape(String(id))}"]`)];buttons.forEach(b=>b.disabled=true);try{let {data,error}=await client.from("likes").select("id").eq("post_id",id).eq("user_id",user.id).maybeSingle();if(error)throw error;let r=data?await client.from("likes").delete().eq("id",data.id).eq("user_id",user.id):await client.from("likes").insert({post_id:id,user_id:user.id});if(r.error)throw r.error;const on=!data;buttons.forEach(b=>{b.setAttribute("aria-pressed",String(on));b.classList.toggle("liked",on);b.textContent=on?"♥ Beğenildi":"♡ Beğen"});toast(on?"Beğenildi":"Beğeni kaldırıldı")}catch(e){safeErr(e)}finally{buttons.forEach(b=>b.disabled=false)}}
+async function showComments(id){let {data,error}=await client.from("comments").select("id,user_id,body,created_at,profiles(username,avatar_url)").eq("post_id",id).order("created_at");if(error){safeErr(error);return}const d=document.createElement("dialog");d.className="commentsDialog";d.innerHTML=`<form method="dialog"><h2>Yorumlar</h2><div>${(data||[]).map(c=>`<p><b>@${esc(c.profiles?.username||"kullanici")}</b> ${esc(c.body)}</p>`).join("")||"<p>Henüz yorum yok.</p>"}</div><textarea id="newComment" placeholder="Yorum yaz..."></textarea><div class="actions"><button value="cancel" class="secondary">Kapat</button><button type="button" id="sendComment">Gönder</button></div></form>`;document.body.appendChild(d);d.showModal();d.querySelector("#sendComment").onclick=async()=>{let body=d.querySelector("#newComment").value.trim();if(!body)return;let r=await client.from("comments").insert({post_id:id,user_id:user.id,body});if(r.error)safeErr(r.error);else{d.close();d.remove();toast("Yorum eklendi")}};d.addEventListener("close",()=>d.remove())}
+async function sharePost(id){let p=posts.find(x=>String(x.id)===String(id));let text=`${p?.caption||"TIKORA gönderisi"} ${p?.media_url||""}`;try{if(navigator.share)await navigator.share({title:"TIKORA",text});else{await navigator.clipboard.writeText(text);toast("Bağlantı kopyalandı")}}catch(e){if(e.name!=="AbortError")toast("Paylaşım desteklenmiyor")}}
+async function publish(){const file=$("media").files[0],caption=$("caption").value.trim();if(!file&&!caption){toast("Metin veya fotoğraf/video ekle.");return}let media_url=null,media_type=null;if(file){if(file.size>100*1024*1024){toast("Dosya en fazla 100 MB olabilir");return}const ext=(file.name.split(".").pop()||"bin").toLowerCase(),path=`${user.id}/${Date.now()}.${ext}`;const up=await client.storage.from("media").upload(path,file,{upsert:false});if(up.error){toast("Medya yüklenemedi: "+up.error.message);return}media_url=client.storage.from("media").getPublicUrl(path).data.publicUrl;media_type=file.type.startsWith("video")?"video":"image"}const ins=await client.from("posts").insert({user_id:user.id,caption,media_url,media_type});if(ins.error){safeErr(ins.error);return}$ ("postDialog").close();$("caption").value="";$("media").value="";toast("Gönderin paylaşıldı");loadFeed(true);loadVideos(true)}
+async function loadVideos(force=false){if(loadState.videoPromise)return loadState.videoPromise;if(!force&&Date.now()-loadState.videoAt<CACHE_MS&&$("videoFeed").dataset.loaded==="1")return;loadState.videoPromise=(async()=>{let {data,error}=await client.from("posts").select("id,user_id,caption,media_url,media_type,created_at,profiles(username,avatar_url)").eq("media_type","video").order("created_at",{ascending:false}).limit(50);if(error){$("videoFeed").innerHTML=`<p class="empty">${esc(error.message)}</p>`;return}$ ("videoFeed").innerHTML=(data||[]).map(p=>`<article class="reel"><video controls playsinline loop preload="metadata" src="${esc(p.media_url)}"></video><p><b>@${esc(p.profiles?.username||"kullanici")}</b><br>${esc(p.caption||"")}<br><button data-like="${p.id}" aria-pressed="false">♡ Beğen</button> <button data-comments="${p.id}">Yorumlar</button></p></article>`).join("")||'<p class="empty">Henüz video yok. + tuşuyla video paylaş.</p>';bindPostActions();$("videoFeed").dataset.loaded="1";loadState.videoAt=Date.now()})().finally(()=>loadState.videoPromise=null);return loadState.videoPromise}
+let searchTimer;
+$("search").addEventListener("input",()=>{clearTimeout(searchTimer);searchTimer=setTimeout(searchUsers,300)});
+async function searchUsers(){let q=$("search").value.trim();if(q.length<2){$("searchResults").innerHTML="";return}let {data,error}=await client.from("profiles").select("id,username,display_name,bio").ilike("username",`%${q}%`).neq("id",user.id).limit(25);if(error){$("searchResults").innerHTML=esc(error.message);return}$("searchResults").innerHTML=(data||[]).map(p=>`<div class="card userResult"><b>@${esc(p.username||"kullanici")}</b><span>${esc(p.display_name||"")}</span><button data-profile="${p.id}">Profil</button><button data-follow="${p.id}">Takip et</button><button data-message="${p.id}">Mesaj</button></div>`).join("")||'<p class="empty">Kullanıcı bulunamadı.</p>';const followBtns=[...document.querySelectorAll("[data-follow]")];if(followBtns.length){const ids=followBtns.map(b=>b.dataset.follow);const fr=await client.from("follows").select("following_id").eq("follower_id",user.id).in("following_id",ids);if(!fr.error){const followed=new Set((fr.data||[]).map(x=>String(x.following_id)));followBtns.forEach(b=>{const on=followed.has(String(b.dataset.follow));b.textContent=on?"Takip ediliyor":"Takip et";b.dataset.following=String(on)})}}document.querySelectorAll("[data-profile]").forEach(b=>b.onclick=()=>openUser(b.dataset.profile));document.querySelectorAll("[data-follow]").forEach(b=>b.onclick=()=>toggleFollow(b.dataset.follow));document.querySelectorAll("[data-message]").forEach(b=>b.onclick=()=>openChat(b.dataset.message))}
+async function toggleFollow(id){if(!user||id===user.id)return;const buttons=[...document.querySelectorAll(`[data-follow="${CSS.escape(String(id))}"],#followThis`)];buttons.forEach(b=>b.disabled=true);try{let {data,error}=await client.from("follows").select("follower_id").eq("follower_id",user.id).eq("following_id",id).maybeSingle();if(error)throw error;let r=data?await client.from("follows").delete().eq("follower_id",user.id).eq("following_id",id):await client.from("follows").insert({follower_id:user.id,following_id:id});if(r.error)throw r.error;const label=data?"Takip et":"Takip ediliyor";buttons.forEach(b=>{b.textContent=label;b.dataset.following=String(!data)});toast(data?"Takipten çıkıldı":"Takip edildi")}catch(e){safeErr(e)}finally{buttons.forEach(b=>b.disabled=false)}}
+async function openUser(id){let {data:p,error}=await client.from("profiles").select("id,username,display_name,bio").eq("id",id).maybeSingle();if(error||!p){safeErr(error||{message:"Profil bulunamadı"});return}let {data:ps}=await client.from("posts").select("id,user_id,caption,media_url,media_type,created_at,profiles(username,avatar_url)").eq("user_id",id).order("created_at",{ascending:false});$("searchResults").innerHTML=`<div class="card"><h2>@${esc(p.username)}</h2><p>${esc(p.display_name||"")}</p><p>${esc(p.bio||"")}</p><button id="followThis">Takip et / bırak</button><button id="messageThis">Mesaj gönder</button></div>${(ps||[]).map(postCard).join("")}`;$ ("followThis").onclick=()=>toggleFollow(id);$("messageThis").onclick=()=>openChat(id);bindPostActions()}
+async function loadSettings(){const {data,error}=await client.from("user_settings").select("*").eq("user_id",user.id).maybeSingle();if(error){toast(error.message);return}$ ("privateAccount").checked=!!(data?.private_account||profile?.is_private);$("allowMessages").checked=data?.allow_messages!==false;$("notificationsEnabled").checked=data?.notifications_enabled!==false}
+async function loadProfile(){let {data,error}=await client.from("profiles").select("*").eq("id",user.id).maybeSingle();if(error){safeErr(error);return}profile=data;$("myProfile").innerHTML=`<div class="card profileCard">${data?.avatar_url?`<img class="profileAvatar" src="${esc(data.avatar_url)}">`:`<div class="profileAvatar avatar">${esc((data?.username||"?")[0].toUpperCase())}</div>`}<h2>${esc(data?.username||user.email)}</h2><p>${esc(data?.display_name||"TIKORA kullanıcısı")}</p><p>${esc(data?.bio||"")}</p><button id="editProfile">Profili düzenle</button><button id="logout">Çıkış yap</button></div><div id="ownPosts"></div>`;$ ("logout").onclick=async()=>{await client.auth.signOut();user=null;authView(false)};$ ("editProfile").onclick=editProfile;let {data:mine}=await client.from("posts").select("id,user_id,caption,media_url,media_type,created_at,profiles(username,avatar_url)").eq("user_id",user.id).order("created_at",{ascending:false});$("ownPosts").innerHTML=(mine||[]).map(postCard).join("");bindPostActions()}
+function editProfile(){const d=document.createElement("dialog");d.innerHTML=`<form method="dialog"><h2>Profili düzenle</h2><input id="displayName" value="${esc(profile?.display_name||"")}" placeholder="Görünen ad"><textarea id="bioText" placeholder="Biyografi">${esc(profile?.bio||"")}</textarea><label>Profil fotoğrafı <input id="avatarFile" type="file" accept="image/*"></label><div class="actions"><button value="cancel">Vazgeç</button><button type="button" id="saveProfile">Kaydet</button></div></form>`;document.body.appendChild(d);d.showModal();d.querySelector("#saveProfile").onclick=async()=>{let patch={display_name:d.querySelector("#displayName").value,bio:d.querySelector("#bioText").value};let file=d.querySelector("#avatarFile").files[0];if(file){if(file.size>12*1024*1024){toast("Profil fotoğrafı en fazla 12 MB olabilir");return}let path=`avatars/${user.id}/${Date.now()}.${(file.name.split(".").pop()||"jpg")}`;let up=await client.storage.from("media").upload(path,file,{upsert:true});if(up.error){safeErr(up.error);return}patch.avatar_url=client.storage.from("media").getPublicUrl(path).data.publicUrl}let r=await client.from("profiles").update(patch).eq("id",user.id);if(r.error)safeErr(r.error);else{d.close();d.remove();toast("Profil kaydedildi");loadProfile()}};d.addEventListener("close",()=>d.remove())}
+async function loadInbox(force=false){const box=$("inboxList");if(!box)return;if(loadState.inboxPromise)return loadState.inboxPromise;if(!force&&Date.now()-loadState.inboxAt<CACHE_MS&&box.dataset.loaded==="1")return;loadState.inboxPromise=(async()=>{const {data,error}=await client.from("messages").select("id,sender_id,receiver_id,body,created_at").or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`).order("created_at",{ascending:false}).limit(100);if(error){box.innerHTML=`<p class="empty">Mesajlar yüklenemedi: ${esc(error.message)}</p>`;return}const rows=data||[],ids=[...new Set(rows.map(m=>m.sender_id===user.id?m.receiver_id:m.sender_id))];if(!ids.length){box.innerHTML="<p class='empty'>Henüz mesaj yok. Keşfet'ten kullanıcı bulup mesaj gönder.</p>";box.dataset.loaded="1";loadState.inboxAt=Date.now();return}const {data:people}=await client.from("profiles").select("id,username").in("id",ids);const names=Object.fromEntries((people||[]).map(p=>[p.id,p.username]));const latest={};rows.forEach(m=>{const id=m.sender_id===user.id?m.receiver_id:m.sender_id;if(!latest[id])latest[id]=m});box.innerHTML=Object.entries(latest).map(([id,m])=>`<button class="card inboxItem" data-peer="${id}"><b>@${esc(names[id]||"kullanici")}</b><span>${esc(m.body||"")}</span></button>`).join("");box.querySelectorAll("[data-peer]").forEach(b=>b.onclick=()=>openChat(b.dataset.peer));box.dataset.loaded="1";loadState.inboxAt=Date.now()})().finally(()=>loadState.inboxPromise=null);return loadState.inboxPromise}
+async function openChat(id){if(!user||!id||id===user.id)return;activePeer=id;showScreen("messages",{skipInbox:true});const box=$("chatArea");if(!box)return;box.innerHTML="<p class='empty'>Sohbet yükleniyor…</p>";const {data:p,error:profileError}=await client.from("profiles").select("username").eq("id",id).maybeSingle();if(profileError){box.innerHTML=`<p class='empty'>Kullanıcı bilgisi alınamadı: ${esc(profileError.message)}</p>`;return}const {data,error}=await client.from("messages").select("id,sender_id,receiver_id,body,created_at").or(`and(sender_id.eq.${user.id},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${user.id})`).order("created_at",{ascending:true}).limit(100);if(error){box.innerHTML=`<p class='empty'>Sohbet açılamadı: ${esc(error.message)}</p>`;return}const history=(data||[]).map(m=>`<p class="bubble ${m.sender_id===user.id?"mine":"theirs"}">${esc(m.body)}</p>`).join("");box.innerHTML=`<div class="chatHead"><button id="backInbox" type="button">← Mesajlar</button><b>@${esc(p?.username||"kullanici")}</b></div><div id="chatHistory">${history||"<p class='empty'>İlk mesajı sen gönder.</p>"}</div><div class="chatComposer"><textarea id="chatText" placeholder="Mesaj yaz…" rows="2"></textarea><button id="sendChat" type="button">Gönder</button></div>`;$ ("backInbox").onclick=()=>{activePeer=null;box.innerHTML="";loadInbox(true)};$ ("sendChat").onclick=sendChat;$ ("chatText").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat()}});startChatRealtime(id);box.scrollIntoView({behavior:"auto",block:"start"})}
+async function sendChat(){const input=$("chatText"),body=input?.value.trim(),peer=activePeer;if(!body||!peer||!user)return;const btn=$("sendChat");btn.disabled=true;const {error}=await client.from("messages").insert({sender_id:user.id,receiver_id:peer,body});if(error){safeErr(error);btn.disabled=false;return}input.value="";await openChat(peer)}
+async function loadStories(){let {data,error}=await client.from("stories").select("id,user_id,media_url,media_type,expires_at,profiles(username,avatar_url)").gt("expires_at",new Date().toISOString()).order("created_at",{ascending:false}).limit(50);if(error){$("storyList").innerHTML="";return}$ ("storyList").innerHTML=(data||[]).map(s=>`<button class="storyItem" data-story="${s.id}">${s.media_type==="video"?"▶":"●"} @${esc(s.profiles?.username||"kullanici")}</button>`).join("");document.querySelectorAll("[data-story]").forEach(b=>b.onclick=()=>viewStory(b.dataset.story))}
+async function addStory(){const f=document.createElement("input");f.type="file";f.accept="image/*,video/*";f.onchange=async()=>{let file=f.files[0];if(!file)return;let path=`stories/${user.id}/${Date.now()}.${file.name.split(".").pop()}`;let up=await client.storage.from("media").upload(path,file);if(up.error){safeErr(up.error);return}let url=client.storage.from("media").getPublicUrl(path).data.publicUrl;let r=await cl
