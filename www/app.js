@@ -22,7 +22,31 @@ async function hydrateLikeStates(){const buttons=[...document.querySelectorAll("
 function bindPostActions(){document.querySelectorAll("[data-like]").forEach(b=>b.onclick=()=>toggleLike(b.dataset.like));document.querySelectorAll("[data-comments]").forEach(b=>b.onclick=()=>showComments(b.dataset.comments));document.querySelectorAll("[data-share]").forEach(b=>b.onclick=()=>sharePost(b.dataset.share));
  document.querySelectorAll("[data-save]").forEach(b=>b.onclick=()=>savePost(b.dataset.save));document.querySelectorAll("[data-user]").forEach(b=>b.onclick=()=>openUser(b.dataset.user))}
 async function savePost(id){const {error}=await client.from("saved_posts").upsert({user_id:user.id,post_id:id},{onConflict:"user_id,post_id"});if(error)safeErr(error);else toast("Gönderi kaydedildi")}
-async function toggleLike(id){if(!user)return;const buttons=[...document.querySelectorAll(`[data-like="${CSS.escape(String(id))}"]`)];buttons.forEach(b=>b.disabled=true);try{let {data,error}=await client.from("likes").select("id").eq("post_id",id).eq("user_id",user.id).maybeSingle();if(error)throw error;let r=data?await client.from("likes").delete().eq("id",data.id).eq("user_id",user.id):await client.from("likes").insert({post_id:id,user_id:user.id});if(r.error)throw r.error;const on=!data;buttons.forEach(b=>{b.setAttribute("aria-pressed",String(on));b.classList.toggle("liked",on);b.textContent=on?"♥ Beğenildi":"♡ Beğen"});toast(on?"Beğenildi":"Beğeni kaldırıldı")}catch(e){safeErr(e)}finally{buttons.forEach(b=>b.disabled=false)}}
+const likeJobs=new Map();
+function paintLike(buttons,on){buttons.forEach(b=>{b.setAttribute("aria-pressed",String(on));b.classList.toggle("liked",on);b.textContent=on?"♥ Beğenildi":"♡ Beğen"})}
+function toggleLike(id){
+ if(!user)return;
+ const buttons=[...document.querySelectorAll(`[data-like="${CSS.escape(String(id))}"]`)];
+ if(!buttons.length)return;
+ // Arayüzü sunucu yanıtını beklemeden anında güncelle.
+ const wasOn=buttons.some(b=>b.getAttribute("aria-pressed")==="true");
+ const desired=!wasOn;
+ paintLike(buttons,desired);
+ const previous=likeJobs.get(String(id))||Promise.resolve();
+ const job=previous.catch(()=>{}).then(async()=>{
+   const {data,error}=await client.from("likes").select("id").eq("post_id",id).eq("user_id",user.id).maybeSingle();
+   if(error)throw error;
+   if(desired&&!data){const r=await client.from("likes").insert({post_id:id,user_id:user.id});if(r.error)throw r.error}
+   else if(!desired&&data){const r=await client.from("likes").delete().eq("id",data.id).eq("user_id",user.id);if(r.error)throw r.error}
+ }).catch(e=>{
+   // Daha yeni bir dokunuş yapılmadıysa hatalı işlemi geri al.
+   const current=buttons.some(b=>b.getAttribute("aria-pressed")==="true");
+   if(current===desired)paintLike(buttons,!desired);
+   safeErr(e);
+ });
+ likeJobs.set(String(id),job);
+ job.finally(()=>{if(likeJobs.get(String(id))===job)likeJobs.delete(String(id))});
+}
 async function showComments(id){let {data,error}=await client.from("comments").select("id,user_id,body,created_at,profiles(username,avatar_url)").eq("post_id",id).order("created_at");if(error){safeErr(error);return}const d=document.createElement("dialog");d.className="commentsDialog";d.innerHTML=`<form method="dialog"><h2>Yorumlar</h2><div>${(data||[]).map(c=>`<p><b>@${esc(c.profiles?.username||"kullanici")}</b> ${esc(c.body)}</p>`).join("")||"<p>Henüz yorum yok.</p>"}</div><textarea id="newComment" placeholder="Yorum yaz..."></textarea><div class="actions"><button value="cancel" class="secondary">Kapat</button><button type="button" id="sendComment">Gönder</button></div></form>`;document.body.appendChild(d);d.showModal();d.querySelector("#sendComment").onclick=async()=>{let body=d.querySelector("#newComment").value.trim();if(!body)return;let r=await client.from("comments").insert({post_id:id,user_id:user.id,body});if(r.error)safeErr(r.error);else{d.close();d.remove();toast("Yorum eklendi")}};d.addEventListener("close",()=>d.remove())}
 async function sharePost(id){let p=posts.find(x=>String(x.id)===String(id));let text=`${p?.caption||"TIKORA gönderisi"} ${p?.media_url||""}`;try{if(navigator.share)await navigator.share({title:"TIKORA",text});else{await navigator.clipboard.writeText(text);toast("Bağlantı kopyalandı")}}catch(e){if(e.name!=="AbortError")toast("Paylaşım desteklenmiyor")}}
 async function publish(){const file=$("media").files[0],caption=$("caption").value.trim();if(!file&&!caption){toast("Metin veya fotoğraf/video ekle.");return}let media_url=null,media_type=null;if(file){if(file.size>100*1024*1024){toast("Dosya en fazla 100 MB olabilir");return}const ext=(file.name.split(".").pop()||"bin").toLowerCase(),path=`${user.id}/${Date.now()}.${ext}`;const up=await client.storage.from("media").upload(path,file,{upsert:false});if(up.error){toast("Medya yüklenemedi: "+up.error.message);return}media_url=client.storage.from("media").getPublicUrl(path).data.publicUrl;media_type=file.type.startsWith("video")?"video":"image"}const ins=await client.from("posts").insert({user_id:user.id,caption,media_url,media_type});if(ins.error){safeErr(ins.error);return}$("postDialog").close();$("caption").value="";$("media").value="";toast("Gönderin paylaşıldı");loadFeed(true);loadVideos(true)}
@@ -36,69 +60,32 @@ async function loadSettings(){const {data,error}=await client.from("user_setting
 async function loadProfile(){let {data,error}=await client.from("profiles").select("*").eq("id",user.id).maybeSingle();if(error){safeErr(error);return}profile=data;$("myProfile").innerHTML=`<div class="card profileCard">${data?.avatar_url?`<img class="profileAvatar" src="${esc(data.avatar_url)}">`:`<div class="profileAvatar avatar">${esc((data?.username||"?")[0].toUpperCase())}</div>`}<h2>${esc(data?.username||user.email)}</h2><p>${esc(data?.display_name||"TIKORA kullanıcısı")}</p><p>${esc(data?.bio||"")}</p><button id="editProfile">Profili düzenle</button><button id="logout">Çıkış yap</button></div><div id="ownPosts"></div>`;$("logout").onclick=async()=>{await client.auth.signOut();user=null;authView(false)};$("editProfile").onclick=editProfile;let {data:mine}=await client.from("posts").select("id,user_id,caption,media_url,media_type,created_at,profiles(username,avatar_url)").eq("user_id",user.id).order("created_at",{ascending:false});$("ownPosts").innerHTML=(mine||[]).map(postCard).join("");bindPostActions()}
 function editProfile(){const d=document.createElement("dialog");d.innerHTML=`<form method="dialog"><h2>Profili düzenle</h2><input id="displayName" value="${esc(profile?.display_name||"")}" placeholder="Görünen ad"><textarea id="bioText" placeholder="Biyografi">${esc(profile?.bio||"")}</textarea><label>Profil fotoğrafı <input id="avatarFile" type="file" accept="image/*"></label><div class="actions"><button value="cancel">Vazgeç</button><button type="button" id="saveProfile">Kaydet</button></div></form>`;document.body.appendChild(d);d.showModal();d.querySelector("#saveProfile").onclick=async()=>{let patch={display_name:d.querySelector("#displayName").value,bio:d.querySelector("#bioText").value};let file=d.querySelector("#avatarFile").files[0];if(file){if(file.size>12*1024*1024){toast("Profil fotoğrafı en fazla 12 MB olabilir");return}let path=`avatars/${user.id}/${Date.now()}.${(file.name.split(".").pop()||"jpg")}`;let up=await client.storage.from("media").upload(path,file,{upsert:true});if(up.error){safeErr(up.error);return}patch.avatar_url=client.storage.from("media").getPublicUrl(path).data.publicUrl}let r=await client.from("profiles").update(patch).eq("id",user.id);if(r.error)safeErr(r.error);else{d.close();d.remove();toast("Profil kaydedildi");loadProfile()}};d.addEventListener("close",()=>d.remove())}
 async function loadInbox(force=false){const box=$("inboxList");if(!box)return;if(loadState.inboxPromise)return loadState.inboxPromise;if(!force&&Date.now()-loadState.inboxAt<CACHE_MS&&box.dataset.loaded==="1")return;loadState.inboxPromise=(async()=>{const {data,error}=await client.from("messages").select("id,sender_id,receiver_id,body,created_at").or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`).order("created_at",{ascending:false}).limit(100);if(error){box.innerHTML=`<p class="empty">Mesajlar yüklenemedi: ${esc(error.message)}</p>`;return}const rows=data||[],ids=[...new Set(rows.map(m=>m.sender_id===user.id?m.receiver_id:m.sender_id))];if(!ids.length){box.innerHTML="<p class='empty'>Henüz mesaj yok. Keşfet'ten kullanıcı bulup mesaj gönder.</p>";box.dataset.loaded="1";loadState.inboxAt=Date.now();return}const {data:people}=await client.from("profiles").select("id,username").in("id",ids);const names=Object.fromEntries((people||[]).map(p=>[p.id,p.username]));const latest={};rows.forEach(m=>{const id=m.sender_id===user.id?m.receiver_id:m.sender_id;if(!latest[id])latest[id]=m});box.innerHTML=Object.entries(latest).map(([id,m])=>`<button class="card inboxItem" data-peer="${id}"><b>@${esc(names[id]||"kullanici")}</b><span>${esc(m.body||"")}</span></button>`).join("");box.querySelectorAll("[data-peer]").forEach(b=>b.onclick=()=>openChat(b.dataset.peer));box.dataset.loaded="1";loadState.inboxAt=Date.now()})().finally(()=>loadState.inboxPromise=null);return loadState.inboxPromise}
-async function openChat(id){if(!user||!id||id===user.id)return;activePeer=id;showScreen("messages",{skipInbox:true});const box=$("chatArea");if(!box)return;box.innerHTML="<p class='empty'>Sohbet yükleniyor…</p>";const {data:p,error:profileError}=await client.from("profiles").select("username").eq("id",id).maybeSingle();if(profileError){box.innerHTML=`<p class='empty'>Kullanıcı bilgisi alınamadı: ${esc(profileError.message)}</p>`;return}const {data,error}=await client.from("messages").select("id,sender_id,receiver_id,body,created_at").or(`and(sender_id.eq.${user.id},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${user.id})`).order("created_at",{ascending:true}).limit(100);if(error){box.innerHTML=`<p class='empty'>Sohbet açılamadı: ${esc(error.message)}</p>`;return}const history=(data||[]).map(m=>`<p class="bubble ${m.sender_id===user.id?"mine":"theirs"}">${esc(m.body)}</p>`).join("");box.innerHTML=`<div class="chatHead"><button id="backInbox" type="button">← Mesajlar</button><b>@${esc(p?.username||"kullanici")}</b></div><div id="chatHistory">${history||"<p class='empty'>İlk mesajı sen gönder.</p>"}</div><div class="chatComposer"><textarea id="chatText" placeholder="Mesaj yaz…" rows="2"></textarea><button id="sendChat" type="button">Gönder</button></div>`;$("backInbox").onclick=()=>{activePeer=null;box.innerHTML="";loadInbox(true)};$("sendChat").onclick=sendChat;$("chatText").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat()}});startChatRealtime(id);box.scrollIntoView({behavior:"auto",block:"start"})}
-async function sendChat(){const input=$("chatText"),body=input?.value.trim(),peer=activePeer;if(!body||!peer||!user)return;const btn=$("sendChat");btn.disabled=true;const {error}=await client.from("messages").insert({sender_id:user.id,receiver_id:peer,body});if(error){safeErr(error);btn.disabled=false;return}input.value="";await openChat(peer)}
-async function loadStories(){let {data,error}=await client.from("stories").select("id,user_id,media_url,media_type,expires_at,profiles(username,avatar_url)").gt("expires_at",new Date().toISOString()).order("created_at",{ascending:false}).limit(50);if(error){$("storyList").innerHTML="";return}$("storyList").innerHTML=(data||[]).map(s=>`<button class="storyItem" data-story="${s.id}">${s.media_type==="video"?"▶":"●"} @${esc(s.profiles?.username||"kullanici")}</button>`).join("");document.querySelectorAll("[data-story]").forEach(b=>b.onclick=()=>viewStory(b.dataset.story))}
-async function addStory(){const f=document.createElement("input");f.type="file";f.accept="image/*,video/*";f.onchange=async()=>{let file=f.files[0];if(!file)return;let path=`stories/${user.id}/${Date.now()}.${file.name.split(".").pop()}`;let up=await client.storage.from("media").upload(path,file);if(up.error){safeErr(up.error);return}let url=client.storage.from("media").getPublicUrl(path).data.publicUrl;let r=await client.from("stories").insert({user_id:user.id,media_url:url,media_type:file.type.startsWith("video")?"video":"image",expires_at:new Date(Date.now()+86400000).toISOString()});if(r.error)safeErr(r.error);else{toast("Hikâye paylaşıldı");loadStories()}};f.click()}
-async function viewStory(id){let {data:s,error}=await client.from("stories").select("*,profiles(username,avatar_url)").eq("id",id).single();if(error){safeErr(error);return}await client.from("story_views").upsert({story_id:id,viewer_id:user.id},{onConflict:"story_id,viewer_id"});
-let d=document.createElement("dialog");d.innerHTML=`<form method="dialog"><h3>@${esc(s.profiles?.username||"kullanici")}</h3>${s.media_type==="video"?`<video controls autoplay playsinline src="${esc(s.media_url)}" style="width:100%"></video>`:`<img src="${esc(s.media_url)}" style="width:100%">`}<button>Kapat</button></form>`;document.body.appendChild(d);d.showModal();d.addEventListener("close",()=>d.remove())}
-$("signUp").onclick=async()=>{const email=$("email").value.trim(),password=$("password").value,username=$("username").value.trim();if(!email||password.length<6||username.length<3){$("authMsg").textContent="E-posta, en az 6 karakter şifre ve en az 3 karakter kullanıcı adı gir.";return}const {data,error}=await client.auth.signUp({email,password,options:{data:{username}}});if(error){$("authMsg").textContent=error.message;return}if(data.session){user=data.user;await afterAuth()}else $("authMsg").textContent="Kayıt alındı. E-postanı doğrula, sonra giriş yap."};
-$("signIn").onclick=signInWithIdentifier;
-$("sendOtp").onclick=async()=>{const phone=$("phone").value.trim();if(!/^\+[1-9]\d{7,14}$/.test(phone)){ $("authMsg").textContent="Telefonu ülke koduyla yaz. Örnek: +905xxxxxxxxx";return }const {error}=await client.auth.signInWithOtp({phone});$("authMsg").textContent=error?error.message:"SMS kodu gönderildi. Supabase SMS sağlayıcısı etkin olmalı."};
-$("verifyOtp").onclick=async()=>{const phone=$("phone").value.trim(),token=$("otp").value.trim();if(!phone||!token){$("authMsg").textContent="Telefon ve SMS kodunu gir.";return}const {data,error}=await client.auth.verifyOtp({phone,token,type:"sms"});if(error){$("authMsg").textContent=error.message;return}user=data.user;await afterAuth()};
-$("notificationsBtn").onclick=()=>showScreen("notifications");
-$("savedBtn").onclick=showSavedPosts;
-$("friendRequestsBtn").onclick=showFriendRequests;
-$("settingsBtn").onclick=()=>showScreen("settings");$("settingsBack").onclick=()=>showScreen("profile");
-$("saveSettings").onclick=async()=>{const patch={user_id:user.id,private_account:$("privateAccount").checked,allow_messages:$("allowMessages").checked,notifications_enabled:$("notificationsEnabled").checked,updated_at:new Date().toISOString()};const {error}=await client.from("user_settings").upsert(patch,{onConflict:"user_id"});if(error){$("settingsStatus").textContent=error.message;return}const r=await client.from("profiles").update({is_private:patch.private_account}).eq("id",user.id);$("settingsStatus").textContent=r.error?r.error.message:"Ayarlar kaydedildi."};
-$("blockedBtn").onclick=async()=>{const {data,error}=await client.from("blocks").select("blocked_id,profiles!blocks_blocked_id_fkey(username)").eq("blocker_id",user.id);if(error){toast(error.message);return}const d=document.createElement("dialog");d.innerHTML=`<h3>Engellenen hesaplar</h3>${(data||[]).map(x=>`<p>@${esc(x.profiles?.username||"kullanıcı")} <button data-unblock="${x.blocked_id}">Engeli kaldır</button></p>`).join("")||"<p>Engellenen hesap yok.</p"}<button id="closeBlocked">Kapat</button>`;document.body.appendChild(d);d.showModal();d.querySelector("#closeBlocked").onclick=()=>d.close();d.querySelectorAll("[data-unblock]").forEach(b=>b.onclick=async()=>{const {error}=await client.from("blocks").delete().eq("blocker_id",user.id).eq("blocked_id",b.dataset.unblock);if(error)toast(error.message);else{toast("Engel kaldırıldı");b.parentElement.remove()}});d.addEventListener("close",()=>d.remove())};
-
-async function loadNotifications(){
- const box=$("notificationList"); if(!box)return;
- const {data,error}=await client.from("notifications").select("id,type,actor_id,reference_id,is_read,created_at").eq("user_id",user.id).order("created_at",{ascending:false}).limit(60);
- if(error){box.innerHTML=`<p>${esc(error.message)}</p>`;return}
- const rows=data||[]; const ids=[...new Set(rows.map(x=>x.actor_id).filter(Boolean))];
- let people=[]; if(ids.length){const r=await client.from("profiles").select("id,username").in("id",ids);people=r.data||[]}
- const names=Object.fromEntries(people.map(p=>[p.id,p.username]));
- box.innerHTML=rows.map(n=>`<button class="card notificationItem" data-notice="${n.id}"><b>@${esc(names[n.actor_id]||"TIKORA")}</b> ${esc(n.type)} <small>${new Date(n.created_at).toLocaleString("tr-TR")}</small> ${n.is_read?"":"• Yeni"}</button>`).join("")||'<p class="empty">Henüz bildirimin yok.</p>';
- box.querySelectorAll("[data-notice]").forEach(b=>b.onclick=async()=>{const {error}=await client.from("notifications").update({is_read:true}).eq("id",b.dataset.notice).eq("user_id",user.id);if(error)safeErr(error);else{b.textContent="Okundu";refreshNotificationCount()}});
+async function openChat(id){
+ if(!user||!id||id===user.id)return;
+ activePeer=id;showScreen("messages",{skipInbox:true});
+ const box=$("chatArea");if(!box)return;
+ // Sohbet kabuğunu hemen çiz; ağ istekleri ekranı açılmasını geciktirmesin.
+ box.innerHTML=`<div class="chatHead"><button id="backInbox" type="button">← Mesajlar</button><b>Sohbet</b></div><div id="chatHistory"><p class='empty'>Mesajlar yükleniyor…</p></div><div class="chatComposer"><textarea id="chatText" placeholder="Mesaj yaz…" rows="2"></textarea><button id="sendChat" type="button">Gönder</button></div>`;
+ $("backInbox").onclick=()=>{activePeer=null;box.innerHTML="";loadInbox(true)};
+ $("sendChat").onclick=sendChat;
+ $("chatText").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat()}});
+ startChatRealtime(id);
+ box.scrollIntoView({behavior:"auto",block:"start"});
+ const [pr,mr]=await Promise.all([
+   client.from("profiles").select("username").eq("id",id).maybeSingle(),
+   client.from("messages").select("id,sender_id,receiver_id,body,created_at").or(`and(sender_id.eq.${user.id},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${user.id})`).order("created_at",{ascending:true}).limit(100)
+ ]);
+ if(activePeer!==id)return;
+ if(pr.error){safeErr(pr.error)}else box.querySelector(".chatHead b").textContent="@"+(pr.data?.username||"kullanici");
+ const historyBox=$("chatHistory");
+ if(mr.error){historyBox.innerHTML=`<p class='empty'>Sohbet açılamadı: ${esc(mr.error.message)}</p>`;return}
+ historyBox.innerHTML=(mr.data||[]).map(m=>`<p class="bubble ${m.sender_id===user.id?"mine":"theirs"}">${esc(m.body)}</p>`).join("")||"<p class='empty'>İlk mesajı sen gönder.</p>";
+ historyBox.scrollTop=historyBox.scrollHeight;
 }
-async function refreshNotificationCount(){
- const {count,error}=await client.from("notifications").select("id",{count:"exact",head:true}).eq("user_id",user.id).eq("is_read",false);
- if(!error&&$("notificationCount"))$("notificationCount").textContent=count?`(${count})`:"";
-}
-async function showSavedPosts(){
- const {data,error}=await client.from("saved_posts").select("post_id").eq("user_id",user.id).order("created_at",{ascending:false});
- if(error){safeErr(error);return}
- const ids=(data||[]).map(x=>x.post_id); if(!ids.length){toast("Kaydedilmiş gönderi yok");return}
- const r=await client.from("posts").select("id,user_id,caption,media_url,media_type,created_at,profiles(username,avatar_url)").in("id",ids);
- if(r.error){safeErr(r.error);return}
- $("myProfile").innerHTML='<h2>Kaydedilenler</h2>'+((r.data||[]).map(postCard).join("")||'<p>Boş</p>');
- bindPostActions();
-}
-async function showFriendRequests(){
- const {data,error}=await client.from("friend_requests").select("id,sender_id,status,created_at").eq("receiver_id",user.id).eq("status","pending").order("created_at",{ascending:false});
- if(error){safeErr(error);return}
- const ids=(data||[]).map(x=>x.sender_id);let people=[];
- if(ids.length){const r=await client.from("profiles").select("id,username").in("id",ids);people=r.data||[]}
- const names=Object.fromEntries(people.map(p=>[p.id,p.username]));
- const d=document.createElement("dialog");
- d.innerHTML='<h2>Arkadaşlık istekleri</h2>'+((data||[]).map(x=>`<p>@${esc(names[x.sender_id]||"kullanıcı")} <button data-accept="${x.id}">Kabul et</button> <button data-reject="${x.id}">Reddet</button></p>`).join("")||'<p>Bekleyen istek yok.</p>')+'<button id="closeReq">Kapat</button>';
- document.body.appendChild(d);d.showModal();d.querySelector("#closeReq").onclick=()=>d.close();
- d.querySelectorAll("[data-accept]").forEach(b=>b.onclick=async()=>{const r=await client.from("friend_requests").update({status:"accepted"}).eq("id",b.dataset.accept).eq("receiver_id",user.id);if(r.error)safeErr(r.error);else{toast("İstek kabul edildi");b.parentElement.remove()}});
- d.querySelectorAll("[data-reject]").forEach(b=>b.onclick=async()=>{const r=await client.from("friend_requests").update({status:"rejected"}).eq("id",b.dataset.reject).eq("receiver_id",user.id);if(r.error)safeErr(r.error);else b.parentElement.remove()});
- d.addEventListener("close",()=>d.remove());
-}
-function startChatRealtime(peer){
- if(window.tikoraChatChannel){client.removeChannel(window.tikoraChatChannel);window.tikoraChatChannel=null}
- const appendIncoming=message=>{if(activePeer!==peer||!$("chatHistory"))return;const row=document.createElement("p");row.className="bubble "+(message.sender_id===user.id?"mine":"theirs");row.textContent=message.body||"";$("chatHistory").appendChild(row)};
- window.tikoraChatChannel=client.channel("chat-"+[user.id,peer].sort().join("-"))
- .on("postgres_changes",{event:"INSERT",schema:"public",table:"messages",filter:`receiver_id=eq.${user.id}`},payload=>{if(payload.new.sender_id===peer)appendIncoming(payload.new)})
- .on("postgres_changes",{event:"INSERT",schema:"public",table:"messages",filter:`sender_id=eq.${user.id}`},payload=>{if(payload.new.receiver_id===peer)appendIncoming(payload.new)})
- .subscribe();
-}
-
-document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>showScreen(b.dataset.screen));
-$("addBtn").onclick=()=>user&&$("postDialog").showModal();$("publish").onclick=publish;$("storyAdd").onclick=addStory;if($("likesBtn"))$("likesBtn").onclick=()=>showScreen("home");
-$("notificationsBtn").onclick=()=>showScreen("notifications");
-client.auth.getSession().then(async({data})=>{if(data.session){user=data.session.user;await afterAuth()}else authView(false)});
+async function sendChat(){
+ const input=$("chatText"),body=input?.value.trim(),peer=activePeer;if(!body||!peer||!user)return;
+ const historyBox=$("chatHistory"),empty=historyBox?.querySelector(".empty");if(empty)empty.remove();
+ const row=document.createElement("p");row.className="bubble mine pending";row.textContent=body;historyBox?.appendChild(row);if(historyBox)historyBox.scrollTop=historyBox.scrollHeight;
+ input.value="";
+ const {error}=await client.from("messages").insert({sender_id:user.id,receiver_id:peer,body});
+ if(error){row.remov
