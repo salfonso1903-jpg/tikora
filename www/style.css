@@ -10,3 +10,12 @@
 
 /* Sohbet arayuzu */
 #chatArea{padding:8px 0 18px}.chatHead{display:flex;align-items:center;gap:12px;position:sticky;top:66px;background:#071b14;padding:8px 0;z-index:2}.chatHead button{background:#34483f;color:#fff}.chatComposer{display:flex;gap:8px;align-items:flex-end;position:sticky;bottom:74px;background:#071b14;padding:8px 0}.chatComposer textarea{flex:1;min-height:48px;max-height:120px;margin:0;resize:vertical}.chatComposer button{flex:0 0 auto}.bubble{max-width:82%;padding:10px 13px;border-radius:15px;margin:8px 0;overflow-wrap:anywhere}.bubble.mine{margin-left:auto;background:#35bd88;color:#052116}.bubble.theirs{margin-right:auto;background:#1a3027;color:#f5fff9}
+
+/* Instagram benzeri yorum ve begeni arayuzu */
+.postStats{display:flex;gap:16px;padding:2px 14px 8px}.postStats button{background:none;color:#d7e9df;padding:2px 0;font-size:14px;font-weight:400}.postStats b{font-weight:800;color:#fff}
+.commentsDialog,.likersDialog{padding:0;border:0;border-radius:22px 22px 0 0;width:100%;max-width:680px;height:min(72vh,680px);max-height:85vh;margin:auto auto 0;position:fixed;bottom:0;left:50%;transform:translateX(-50%);background:#10271f;overflow:hidden}
+.commentsDialog::backdrop,.likersDialog::backdrop{background:#0009}
+.commentSheet{height:100%;display:flex;flex-direction:column;padding:12px 18px calc(14px + env(safe-area-inset-bottom))}
+.sheetHandle{width:42px;height:5px;border-radius:9px;background:#71877c;margin:0 auto 12px}
+.commentSheet h2,.likersDialog h2{font-size:20px;text-align:center;margin:4px 0 16px}
+.commentList{flex:1;overflow:auto}.commentRow,.likerRow{display:flex;align-items:flex-start;gap:10px;margin:14px 0}.commentAvatar{flex:0 0 36px;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:#35bd88;color:#062116;font-weight:bold}.commentRow p{margin:5px 0;overflow-wrap:anywhere}.commentComposer{display:flex;gap:8px;align-items:center;border-top:1px solid #345044;padding-top:10px}.commentComposer textarea{flex:1;min-height:42px;max-height:90px;margin:0;resize:none}.commentComposer button{white-space:nowrap}.commentClose{background:transparent;color:#b9cec3;margin-top:6px}.likersDialog{padding:18px;overflow:auto}.likerRow{align-items:center}
