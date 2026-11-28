@@ -35,3 +35,13 @@
 .profileCounts{display:flex;justify-content:space-around;gap:12px;padding:12px 4px;margin:8px 0;border-top:1px solid #ffffff22;border-bottom:1px solid #ffffff22;text-align:center}.profileCounts span{display:flex;flex-direction:column;gap:4px;color:#b9c9c0;font-size:13px}.profileCounts b{font-size:17px;color:#fff}.reel{scroll-snap-align:start;min-height:75vh;display:flex;flex-direction:column;justify-content:center}#videoFeed{scroll-snap-type:y proximity}#resetPassword{background:transparent;color:#8fe9bd;text-decoration:underline}
 
 .dmMedia{display:block;max-width:min(240px,65vw);max-height:320px;border-radius:12px;margin-top:4px}.dmComposer #attachChat,.dmComposer #recordVoice{min-width:38px;padding:8px}.dmComposer{gap:6px}
+
+.authModeSwitch{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0}
+.authModeSwitch button{width:100%}
+.authModeSwitch .authModeActive{background:#35bd88;color:#052116}
+.authLabel{display:block;margin:10px 2px 2px;color:#d8e8df;font-size:14px;font-weight:700}
+.authEmailOtp{border-top:1px solid #365447;margin-top:16px;padding-top:12px}
+.authEmailOtp button{width:100%;margin-top:8px}
+.authActions{display:flex;flex-direction:column}
+.authActions button{width:100%}
+#authMsg{display:block;margin-top:12px;min-height:22px}
